@@ -1,6 +1,6 @@
 import R from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "@tanstack/react-router";
+import { useRouter, useRouterState } from "@tanstack/react-router";
 import { observeResize } from "../../lib/observeResize";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { createNewThreadHandler } from "../../hooks/useHandleNewThread";
@@ -14,8 +14,8 @@ import "./board.css";
 const h = R.createElement;
 const refOf = (t) => ({ environmentId: t.environmentId, threadId: t.id });
 const keyOfRef = (ref) => (ref ? `${ref.environmentId}/${ref.threadId}` : "");
-function currentRef(router) {
-  const parts = router.state.location.pathname.split("/").filter(Boolean);
+function currentRef(pathname) {
+  const parts = pathname.split("/").filter(Boolean);
   return parts.length === 2 && !["draft", "settings", "threads"].includes(parts[0])
     ? { environmentId: decodeURIComponent(parts[0]), threadId: decodeURIComponent(parts[1]) }
     : null;
@@ -255,14 +255,15 @@ function ThreadCard({
   );
 }
 
-function NativeComposer({ router, threads, selected, onSelect, visible, onClose }) {
+function NativeComposer({ threads, selected, onSelect, visible, onClose }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const header = R.useRef(null);
   const [position, setPosition] = R.useState(null),
     [width, setWidth] = R.useState(540),
     [height, setHeight] = R.useState(150);
   const correctTarget = selected
-    ? keyOfRef(currentRef(router)) === selected
-    : router.state.location.pathname.startsWith("/draft/");
+    ? keyOfRef(currentRef(pathname)) === selected
+    : pathname.startsWith("/draft/");
   const available = visible && correctTarget;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Positions the existing native composer using document CSS variables.
   R.useLayoutEffect(() => {
@@ -364,7 +365,9 @@ export function SessionBoard() {
   const [open, setOpen] = R.useState(localStorage.getItem("t3code:board:open:v2") !== "false");
   const [query, setQuery] = R.useState(""),
     [project, setProject] = R.useState("all");
-  const [selected, setSelected] = R.useState(keyOfRef(currentRef(router)) || null),
+  const [selected, setSelected] = R.useState(
+      keyOfRef(currentRef(router.state.location.pathname)) || null,
+    ),
     [composing, setComposing] = R.useState(false);
   const [error, setError] = R.useState(""),
     [collapsed, setCollapsed] = R.useState(new Set());
@@ -404,8 +407,8 @@ export function SessionBoard() {
   R.useEffect(
     () =>
       router.subscribe("onResolved", () => {
-        const ref = currentRef(router);
-        if (ref) setSelected(keyOfRef(ref));
+        const ref = currentRef(router.state.location.pathname);
+        setSelected(keyOfRef(ref) || null);
         forceRoute();
       }),
     [],
@@ -428,7 +431,7 @@ export function SessionBoard() {
     setSelected(null);
     setComposing(false);
     try {
-      const active = currentRef(router);
+      const active = currentRef(router.state.location.pathname);
       const activeThread = threads.find((t) => threadKey(t) === keyOfRef(active));
       const destination =
         projects.find((p) => projectKey(p) === project) ??
@@ -718,7 +721,6 @@ export function SessionBoard() {
       },
     }),
     h(NativeComposer, {
-      router,
       threads,
       selected,
       visible: open && composing,

@@ -515,7 +515,35 @@ html[data-t3-board-open="true"][data-t3-board-composer="true"]
 html[data-t3-board-open="true"][data-t3-board-composer="true"]
   [data-chat-composer-stack]
   > .absolute:has([data-draft-project-trigger])
-  h1 {
+  h1:not(:has([data-draft-project-trigger])) {
+  display: none;
+}
+html[data-t3-board-open="true"][data-t3-board-composer="true"]
+  [data-chat-composer-stack]
+  h1:has([data-draft-project-trigger]) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 4px 10px;
+  font: inherit;
+  letter-spacing: inherit;
+}
+html[data-t3-board-open="true"][data-t3-board-composer="true"]
+  [data-chat-composer-stack]
+  h1:has([data-draft-project-trigger])
+  > span:has([data-draft-project-trigger]) {
+  font: inherit;
+  letter-spacing: inherit;
+}
+html[data-t3-board-open="true"][data-t3-board-composer="true"]
+  [data-chat-composer-stack]
+  h1:has([data-draft-project-trigger])
+  :not(
+    :has([data-draft-project-trigger]),
+    [data-draft-project-trigger],
+    [data-draft-project-trigger] *
+  ) {
   display: none;
 }
 html[data-t3-board-open="true"][data-t3-board-composer="true"]
