@@ -110,6 +110,7 @@ jobs:
           name: custom-wsl-runtime
           path: release-wsl
       - name: Ensure Electron runtime
+        shell: bash
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Build Windows resource monitor
         run: |
