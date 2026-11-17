@@ -58,15 +58,28 @@ async function sync(tag) {
     ],
     { stdio: "inherit" },
   );
-  const merge = NodeChildProcess.spawnSync("git", ["merge", "--no-edit", sourceRef], {
+  const previousHead = run("git", ["rev-parse", "HEAD"]);
+  const merge = NodeChildProcess.spawnSync("git", ["merge", "--no-ff", "--no-commit", sourceRef], {
     cwd: root,
     stdio: "inherit",
   });
   if (merge.status !== 0) {
-    const conflicts = run("git", ["diff", "--name-only", "--diff-filter=U"]);
-    run("git", ["merge", "--abort"]);
-    throw new Error(`Upstream merge needs adaptation in these files\n${conflicts}`);
+    const conflicts = run("git", ["diff", "--name-only", "--diff-filter=U"])
+      .split("\n")
+      .filter(Boolean);
+    if (!conflicts.length || conflicts.some((file) => !file.startsWith(".github/workflows/"))) {
+      run("git", ["merge", "--abort"]);
+      throw new Error(`Upstream merge needs adaptation in these files\n${conflicts.join("\n")}`);
+    }
   }
+  run("git", [
+    "restore",
+    `--source=${previousHead}`,
+    "--staged",
+    "--worktree",
+    "--",
+    ".github/workflows",
+  ]);
   release.upstreamTag = tag;
   release.version = tag.slice(1);
   NodeFS.writeFileSync(manifestPath, JSON.stringify(release, null, 2) + "\n");
