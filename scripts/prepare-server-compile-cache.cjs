@@ -6,6 +6,7 @@ const os = require("node:os");
 
 // afterPack runs before signing and installer creation, against the final ASAR layout.
 module.exports = async ({ appOutDir, electronPlatformName, arch, packager }) => {
+  if (process.env.T3CODE_PREPARE_SERVER_COMPILE_CACHE === "0") return;
   if (!["darwin", "win32", "linux"].includes(electronPlatformName)) {
     console.log(`[server-compile-cache] Skipping unsupported target ${electronPlatformName}`);
     return;

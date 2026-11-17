@@ -1,0 +1,143 @@
+name: Custom T3 Code update
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Upstream stable tag, or latest
+        default: latest
+        required: true
+  schedule:
+    - cron: "17 */6 * * *"
+
+concurrency:
+  group: custom-t3-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      version: ${{ steps.source.outputs.version }}
+      publish: ${{ steps.source.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter @t3tools/web... --filter @t3tools/scripts...
+      - name: Merge upstream into this custom branch
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag || 'latest' }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          vp exec node custom/update.mjs sync "$UPSTREAM_TAG"
+      - name: Check native UI integration
+        run: |
+          vp run --filter @t3tools/web typecheck
+          vp run --filter @t3tools/web build
+          cd apps/web
+          vp test run --project unit src/hooks/useThreadActions.permissions.test.ts src/hooks/useThreadActions.undo.test.ts
+      - name: Save validated source and resolve release
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+          version=$(node -p "JSON.parse(require('fs').readFileSync('custom/release.json','utf8')).version")
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux-runtime:
+    needs: sync
+    if: needs.sync.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ needs.sync.outputs.version }}
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync.outputs.commit }}
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter t3... --filter @t3tools/scripts...
+      - name: Build matching WSL runtime
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          vp run --filter t3 build
+          vp run --filter t3 build:exe
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-unknown-linux-gnu
+          mkdir -p release-resource-monitor/linux-x64
+          cp native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor release-resource-monitor/linux-x64/t3-resource-monitor
+          vp exec node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$APP_VERSION" --resource-monitor-dir "$PWD/release-resource-monitor" --output-dir release-wsl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: custom-wsl-runtime
+          path: release-wsl/*.tar.gz
+
+  windows:
+    needs: [sync, linux-runtime]
+    runs-on: windows-latest
+    env:
+      APP_VERSION: ${{ needs.sync.outputs.version }}
+      CUSTOM_UPDATE_REPOSITORY: ${{ github.repository }}
+      T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync.outputs.commit }}
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter t3... --filter @t3tools/desktop... --filter @t3tools/scripts...
+      - uses: actions/download-artifact@v8
+        with:
+          name: custom-wsl-runtime
+          path: release-wsl
+      - name: Ensure Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Build Windows resource monitor
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Build custom Windows installer and update metadata
+        shell: bash
+        run: vp exec node custom/update.mjs build --wsl-runtime "$PWD/release-wsl/t3-$APP_VERSION-linux-x64.tar.gz" --output-dir "$PWD/release-custom"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: custom-windows-update
+          path: |
+            release-custom/*.exe
+            release-custom/*.blockmap
+            release-custom/latest.yml
+
+  publish:
+    needs: [sync, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: custom-windows-update
+          path: release-custom
+      - name: Publish the validated custom update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.sync.outputs.version }}
+          COMMIT: ${{ needs.sync.outputs.commit }}
+        run: gh release create "v$VERSION" release-custom/* --repo "$GITHUB_REPOSITORY" --target "$COMMIT" --title "T3 Code $VERSION" --notes "Synced from pingdotgg/t3code v$VERSION. Includes the session board and two-color theme."
