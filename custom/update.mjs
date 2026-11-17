@@ -44,7 +44,7 @@ async function sync(tag) {
     return;
   }
   if (tag.localeCompare(release.upstreamTag, "en", { numeric: true }) <= 0)
-    throw new Error(`Use a release newer than ${release.upstreamTag}; current source is unchanged.`);
+    throw new Error(`Select a release newer than ${release.upstreamTag}.`);
   if (run("git", ["status", "--porcelain"]))
     throw new Error("Commit local changes before synchronizing upstream.");
   const sourceRef = `refs/remotes/upstream/releases/${tag}`;
