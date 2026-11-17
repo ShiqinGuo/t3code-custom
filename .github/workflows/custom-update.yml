@@ -29,9 +29,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/setup-ci-deps
-        with:
-          install-args: --filter @t3tools/web... --filter @t3tools/scripts...
       - name: Merge upstream into this custom branch
         env:
           UPSTREAM_TAG: ${{ inputs.upstream_tag || 'latest' }}
@@ -40,7 +37,10 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          vp exec node custom/update.mjs sync "$UPSTREAM_TAG"
+          node custom/update.mjs sync "$UPSTREAM_TAG"
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter @t3tools/web... --filter @t3tools/scripts...
       - name: Check native UI integration
         run: |
           vp run --filter @t3tools/web typecheck
