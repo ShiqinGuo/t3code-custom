@@ -36,6 +36,7 @@ jobs:
         env:
           UPSTREAM_TAG: ${{ inputs.upstream_tag || 'latest' }}
           GITHUB_TOKEN: ${{ github.token }}
+          VP_GIT_HOOKS: "0"
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -140,4 +141,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.sync.outputs.version }}
           COMMIT: ${{ needs.sync.outputs.commit }}
-        run: gh release create "v$VERSION" release-custom/* --repo "$GITHUB_REPOSITORY" --target "$COMMIT" --title "T3 Code $VERSION" --notes "Synced from pingdotgg/t3code v$VERSION. Includes the session board and two-color theme."
+        run: |
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/v$VERSION" -f sha="$COMMIT" -F force=true || gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$COMMIT"
+          gh release create "v$VERSION" release-custom/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "T3 Code $VERSION" --notes "Synced from pingdotgg/t3code v$VERSION. Includes the session board and two-color theme."
